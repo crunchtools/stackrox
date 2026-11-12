@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# stackrox-certs DIR — mint the private CA and the two identities Scanner V4
+# needs, once. Idempotent: an existing CA and certs are left alone.
+#
+#   DIR/ca.pem, DIR/ca-key.pem       private CA (key never leaves DIR)
+#   DIR/scanner/{ca,cert,key}.pem    server identity SCANNER_V4_SERVICE
+#   DIR/client/{ca,cert,key}.pem     client identity CENTRAL_SERVICE
+#
+# Scanner V4 identifies peers by the certificate subject: OU is the service
+# type and CN is "<SERVICE_TYPE>: <name>" (pkg/mtls/cn.go). The indexer and
+# matcher gRPC APIs authorize only Central (and Sensors) — scanner/services —
+# so the client cert must claim CENTRAL_SERVICE. File names follow
+# pkg/mtls/crypto.go.
+set -euo pipefail
+
+dir=${1:?usage: stackrox-certs DIR}
+days=${STACKROX_CERT_DAYS:-3650}
+
+umask 077
+mkdir -p "$dir/scanner" "$dir/client"
+
+if [[ ! -s "$dir/ca.pem" || ! -s "$dir/ca-key.pem" ]]; then
+    openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days "$days" \
+        -subj "/O=crunchtools stackrox/CN=StackRox Scanner V4 standalone CA" \
+        -keyout "$dir/ca-key.pem" -out "$dir/ca.pem" 2>/dev/null
+    # A new CA invalidates any old leaf certs.
+    rm -f "$dir/scanner/cert.pem" "$dir/client/cert.pem"
+fi
+
+# issue NAME SERVICE_TYPE CN SAN
+issue() {
+    local out=$1 type=$2 cn=$3 san=$4
+    [[ -s "$out/cert.pem" && -s "$out/key.pem" ]] && return 0
+    local ext
+    ext=$(mktemp)
+    printf '%s\n' \
+        "basicConstraints=critical,CA:FALSE" \
+        "keyUsage=critical,digitalSignature,keyEncipherment" \
+        "extendedKeyUsage=serverAuth,clientAuth" \
+        "subjectAltName=$san" >"$ext"
+    openssl req -newkey rsa:3072 -nodes -sha256 \
+        -subj "/OU=$type/CN=$cn" \
+        -keyout "$out/key.pem" -out "$out/req.csr" 2>/dev/null
+    openssl x509 -req -sha256 -days "$days" -in "$out/req.csr" \
+        -CA "$dir/ca.pem" -CAkey "$dir/ca-key.pem" -CAcreateserial \
+        -extfile "$ext" -out "$out/cert.pem" 2>/dev/null
+    rm -f "$out/req.csr" "$ext" "$dir/ca.srl"
+}
+
+issue "$dir/scanner" SCANNER_V4_SERVICE "SCANNER_V4_SERVICE: Scanner V4" \
+    "DNS:scanner-v4.stackrox,DNS:scanner-v4.stackrox.svc,DNS:localhost,IP:127.0.0.1"
+issue "$dir/client" CENTRAL_SERVICE "CENTRAL_SERVICE: Central" \
+    "DNS:central.stackrox,DNS:central.stackrox.svc"
+
+cp "$dir/ca.pem" "$dir/scanner/ca.pem"
+cp "$dir/ca.pem" "$dir/client/ca.pem"
+chmod 0644 "$dir"/ca.pem "$dir"/{scanner,client}/{ca,cert}.pem

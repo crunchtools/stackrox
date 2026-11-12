@@ -1,0 +1,28 @@
+[Unit]
+Description=StackRox Scanner V4 (standalone, no Central)
+Requires=srv-secrets@stackrox.service stackrox-db.service
+After=srv-secrets@stackrox.service stackrox-db.service
+
+[Container]
+# Pinned to the upstream version, never :latest.
+Image=quay.io/crunchtools/stackrox:5.0.0
+ContainerName=stackrox
+Pod=stackrox.pod
+# SCANNER_DB_PASSWORD from the delivered env file; the entrypoint moves it to a
+# 0600 file and the rendered config holds only the path.
+EnvironmentFile=%t/srv-secrets/stackrox/stackrox.env
+# Certs (CA key included) and the rendered config. Mint once, keep forever.
+Volume=%h/srv/stackrox/data/stackrox:/var/lib/stackrox:Z,U
+# Headroom for the first bundle import; 8g is what the reference run used.
+PodmanArgs=--memory=8g
+Tmpfs=/tmp:rw,nosuid,size=256m
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target
