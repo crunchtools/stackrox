@@ -1,0 +1,29 @@
+# Fast host-side gate: shellcheck every script. The container build gates the
+# shipped image; this gates the scripts on every push.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Shellcheck
+        run: |
+          shellcheck \
+            rootfs/usr/local/bin/stackrox-certs \
+            rootfs/usr/local/bin/stackrox-entrypoint \
+            rootfs/usr/local/bin/stackrox-scan \
+            tests/boot.sh \
+            tests/contract.sh

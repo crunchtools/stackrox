@@ -1,0 +1,37 @@
+# Container release: build once, gate the digest, promote what was tested
+# (constitution container-image VII).
+
+name: Container
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  schedule:
+    - cron: "37 4 * * 1"   # weekly: base-image errata, gated like any build
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  container:
+    uses: crunchtools/constitution/.github/workflows/container-release.yml@v1.41.0
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      image: quay.io/crunchtools/stackrox
+      # Production shape: the scanner beside a Hummingbird Postgres in one pod,
+      # readiness 200 over its own TLS. The vulnerability import (~15 min) is
+      # not part of the gate; readiness is "database".
+      boot: command
+      boot-command: |
+        IMAGE="$IMAGE" tests/boot.sh
+      # Contract: binaries, pinned version + bundle stream, and the cert
+      # identities Scanner V4 authorizes.
+      contract-test: |
+        IMAGE="$IMAGE" tests/contract.sh
+    secrets:
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}

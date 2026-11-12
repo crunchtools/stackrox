@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# stackrox-entrypoint — mint certs if missing, render the scanner config from
+# the environment, and exec StackRox Scanner V4 (indexer + matcher in one
+# process). Any arguments replace the scanner (e.g. `bash`, `stackrox-scan`).
+#
+# Environment (all optional):
+#   SCANNER_DB_HOST      Postgres host                  (localhost)
+#   SCANNER_DB_PORT      Postgres port                  (5432)
+#   SCANNER_DB_USER      Postgres user                  (postgres)
+#   SCANNER_DB_NAME      Postgres database              (postgres)
+#   SCANNER_DB_SSLMODE   libpq sslmode                  (disable: pod-local)
+#   SCANNER_DB_PASSWORD_FILE  file holding the password (preferred)
+#   SCANNER_DB_PASSWORD  the password, for EnvironmentFile-delivered secrets;
+#                        written to a 0600 file under $TMPDIR, never to config
+#   SCANNER_VULN_URL     vulnerability bundle URL       (upstream v4 bundle)
+#   SCANNER_LOG_LEVEL    debug|info|warn|error          (info)
+#   STACKROX_HOME        certs + rendered config        (/var/lib/stackrox)
+set -euo pipefail
+
+home=${STACKROX_HOME:-/var/lib/stackrox}
+
+if [[ $# -gt 0 ]]; then
+    exec "$@"
+fi
+
+stackrox-certs "$home/certs"
+
+pwfile=${SCANNER_DB_PASSWORD_FILE:-}
+if [[ -z "$pwfile" && -n "${SCANNER_DB_PASSWORD:-}" ]]; then
+    pwfile=$(umask 077; mktemp "${TMPDIR:-/tmp}/scanner-db-pw.XXXXXX")
+    printf '%s' "$SCANNER_DB_PASSWORD" >"$pwfile"
+    unset SCANNER_DB_PASSWORD
+fi
+if [[ -n "$pwfile" && ! -r "$pwfile" ]]; then
+    echo "stackrox-entrypoint: password file $pwfile is not readable" >&2
+    exit 1
+fi
+
+conn="host=${SCANNER_DB_HOST:-localhost} port=${SCANNER_DB_PORT:-5432} user=${SCANNER_DB_USER:-postgres} dbname=${SCANNER_DB_NAME:-postgres} sslmode=${SCANNER_DB_SSLMODE:-disable}"
+vuln_url=${SCANNER_VULN_URL:-https://definitions.stackrox.io/v4/vulnerability-bundles/v4/vulnerabilities.zip}
+
+cat >"$home/config.yaml" <<EOF
+# Rendered by stackrox-entrypoint on every start; edit the environment, not this.
+http_listen_addr: 0.0.0.0:9443
+grpc_listen_addr: 0.0.0.0:8443
+indexer:
+  enable: true
+  database:
+    conn_string: "$conn"
+    password_file: "$pwfile"
+matcher:
+  enable: true
+  database:
+    conn_string: "$conn"
+    password_file: "$pwfile"
+  vulnerabilities_url: "$vuln_url"
+mtls:
+  certs_dir: "$home/certs/scanner"
+log_level: ${SCANNER_LOG_LEVEL:-info}
+EOF
+
+exec scanner --conf="$home/config.yaml"

@@ -1,0 +1,24 @@
+# See constitution.md XV. github-actions is required for every repo; docker
+# tracks the ubi10-minimal and Hummingbird go-builder bases in the Containerfile.
+# STACKROX_VERSION is bumped by hand with each upstream release (the tag follows
+# it), not by Dependabot. crunchtools/constitution is ignored: its pin moves with
+# `Inherits:` through scripts/fleet-bump.py, and a lone pin bump would fail
+# validation.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "crunchtools/constitution*"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

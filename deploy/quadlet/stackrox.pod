@@ -1,0 +1,13 @@
+# StackRox Scanner V4 standalone: scanner + Postgres in one pod.
+# Loopback only. The pod gets its own network, not a shared one, so Postgres
+# is reachable from the scanner on localhost and from nothing else.
+[Unit]
+Description=StackRox Scanner V4 pod (scanner + Postgres)
+
+[Pod]
+PodName=stackrox
+PublishPort=127.0.0.1:8443:8443
+PublishPort=127.0.0.1:9443:9443
+
+[Install]
+WantedBy=default.target
