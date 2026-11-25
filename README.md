@@ -17,13 +17,18 @@ The image version is upstream's: `5.0.0` is StackRox 5.0.0.
 ## Quick start
 
 ```bash
+# The Postgres password, as a podman secret both containers mount as a file.
+openssl rand -base64 32 | podman secret create stackrox-db-password -
+
 podman pod create --name stackrox -p 127.0.0.1:8443:8443 -p 127.0.0.1:9443:9443
 podman run -d --pod stackrox --name stackrox-db \
-  -e POSTGRES_PASSWORD=change-me \
+  --secret stackrox-db-password,type=mount,target=/run/secrets/db-password \
+  -e POSTGRES_PASSWORD_FILE=/run/secrets/db-password \
   -v stackrox-pg:/var/lib/postgresql/data \
   quay.io/hummingbird/postgresql:18
 podman run -d --pod stackrox --name stackrox \
-  -e SCANNER_DB_PASSWORD=change-me \
+  --secret stackrox-db-password,type=mount,target=/run/secrets/db-password,uid=65532,mode=0400 \
+  -e SCANNER_DB_PASSWORD_FILE=/run/secrets/db-password \
   -v stackrox-home:/var/lib/stackrox \
   quay.io/crunchtools/stackrox:5.0.0
 
@@ -65,8 +70,7 @@ volume: a restart then resumes in seconds instead of re-importing.
 | `SCANNER_DB_USER` | `postgres` | |
 | `SCANNER_DB_NAME` | `postgres` | |
 | `SCANNER_DB_SSLMODE` | `disable` | pod-local traffic |
-| `SCANNER_DB_PASSWORD_FILE` | | preferred |
-| `SCANNER_DB_PASSWORD` | | moved to a 0600 temp file at start |
+| `SCANNER_DB_PASSWORD_FILE` | | **required**: the password's file, a mounted podman secret. `SCANNER_DB_PASSWORD` is refused, so the password never sits in the environment |
 | `SCANNER_VULN_URL` | upstream `v4` bundle | air-gapped: serve the zip yourself |
 | `SCANNER_LOG_LEVEL` | `info` | |
 
@@ -76,8 +80,14 @@ Volume `/var/lib/stackrox` holds the CA, the certs and the rendered config.
 
 `deploy/quadlet/` holds the Podman quadlets used on a workstation: a pod, the
 Postgres and the scanner, loopback ports only, data under
-`~/srv/stackrox/data/{postgres,stackrox}`, and the DB password delivered from a
-secret store into an EnvironmentFile.
+`~/srv/stackrox/data/{postgres,stackrox}`, and the DB password as the podman
+secret `stackrox-db-password`, which both containers mount as a file. Create it
+from the secret store before the first start, and again when the password
+rotates:
+
+```bash
+<print the password from the secret store> | podman secret create --replace stackrox-db-password -
+```
 
 ## Docs
 

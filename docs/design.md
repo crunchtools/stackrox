@@ -41,7 +41,7 @@ against Red Hat's CSAF VEX data.
   certificate subject and accepts only Central and Sensors. `stackrox-certs`
   mints a private CA, a `SCANNER_V4_SERVICE` server cert and a
   `CENTRAL_SERVICE` client cert; the CA key never leaves the volume.
-- **No plaintext secret in the config.** The DB password arrives as a file
-  (`SCANNER_DB_PASSWORD_FILE`) or as an EnvironmentFile-delivered variable that
-  the entrypoint writes to a 0600 temp file; the rendered `config.yaml` holds
-  only the file path.
+- **No plaintext secret in the config or the environment.** The DB password
+  arrives only as a file, a podman secret mounted at `SCANNER_DB_PASSWORD_FILE`;
+  the entrypoint refuses `SCANNER_DB_PASSWORD`, and the rendered `config.yaml`
+  holds only the file path.

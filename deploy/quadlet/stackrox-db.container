@@ -1,15 +1,14 @@
 [Unit]
 Description=StackRox Scanner V4 database (Hummingbird PostgreSQL 18)
-# Secrets come from OpenBao via the runtime dir, never a plaintext file.
-Requires=srv-secrets@stackrox.service
-After=srv-secrets@stackrox.service
 
 [Container]
 Image=quay.io/hummingbird/postgresql:18
 ContainerName=stackrox-db
 Pod=stackrox.pod
-# POSTGRES_PASSWORD from the delivered env file.
-EnvironmentFile=%t/srv-secrets/stackrox/stackrox.env
+# The password is the podman secret stackrox-db-password, mounted as a file
+# (README: Deploy). Never an environment variable.
+Secret=stackrox-db-password,type=mount,target=/run/secrets/db-password
+Environment=POSTGRES_PASSWORD_FILE=/run/secrets/db-password
 # The vulnerability data lives here: it survives restarts and upgrades, so
 # only the first start pays the ~15 minute bundle import. U: owned by the
 # image's postgres user (999) inside the container.
