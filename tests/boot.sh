@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # Boot gate: the image starts as production starts it — beside a Hummingbird
-# Postgres in one pod — and the scanner's readiness endpoint answers 200 over
-# its own TLS. Readiness is "database" (upstream default), so this does not wait
-# for the ~15-minute vulnerability import.
+# Postgres in one pod, the password a podman secret mounted as a file — and the
+# scanner's readiness endpoint answers 200 over its own TLS. Readiness is
+# "database" (upstream default), so this does not wait for the ~15-minute
+# vulnerability import.
+#
+# The pod has no network but its own loopback (--network none): nothing here
+# reaches a registry, the bundle or any other service, and the matcher's bundle
+# fetch fails and retries without touching readiness. With no published port,
+# readiness is asked from inside the pod, by the image's own curl.
 #
 #   IMAGE=quay.io/crunchtools/stackrox@sha256:... tests/boot.sh
 set -euo pipefail
@@ -20,19 +26,19 @@ cleanup() {
         podman logs "$pod-scanner" 2>&1 | tail -40 || true
     fi
     podman pod rm -f "$pod" >/dev/null 2>&1 || true
+    podman secret rm "$pod-pw" >/dev/null 2>&1 || true
     exit "$status"
 }
 trap cleanup EXIT
 
-podman pod create --name "$pod" -p 127.0.0.1::9443 >/dev/null
+printf '%s' "$pw" | podman secret create "$pod-pw" - >/dev/null
+podman pod create --name "$pod" --network none >/dev/null
 podman run -d --pod "$pod" --name "$pod-db" \
-    -e POSTGRES_PASSWORD="$pw" "$DB_IMAGE" >/dev/null
+    --secret "$pod-pw,type=mount,target=/run/secrets/db-password" \
+    -e POSTGRES_PASSWORD_FILE=/run/secrets/db-password "$DB_IMAGE" >/dev/null
 podman run -d --pod "$pod" --name "$pod-scanner" \
-    -e SCANNER_DB_PASSWORD="$pw" "$IMAGE" >/dev/null
-
-infra=$(podman pod inspect "$pod" --format '{{.InfraContainerID}}')
-port=$(podman port "$infra" 9443/tcp | head -1 | sed 's/.*://')
-[[ -n "$port" ]] || { echo "boot: no host port for 9443" >&2; exit 1; }
+    --secret "$pod-pw,type=mount,target=/run/secrets/db-password,uid=65532,mode=0400" \
+    -e SCANNER_DB_PASSWORD_FILE=/run/secrets/db-password "$IMAGE" >/dev/null
 
 deadline=$((SECONDS + TIMEOUT))
 code=000
@@ -41,7 +47,8 @@ while (( SECONDS < deadline )); do
         echo "boot: scanner exited" >&2
         exit 1
     fi
-    code=$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1:$port/health/readiness" || true)
+    code=$(podman exec "$pod-scanner" curl -sk -o /dev/null -w '%{http_code}' \
+        https://127.0.0.1:9443/health/readiness || true)
     if [[ "$code" == 200 ]]; then
         echo "boot: readiness 200 after ${SECONDS}s"
         exit 0
