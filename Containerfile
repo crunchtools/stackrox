@@ -19,15 +19,26 @@ ARG STACKROX_VERSION
 # in the upstream tree). The build checks it matches.
 ARG VULN_BUNDLE=v4
 
+# The release tarball's sha256, checked before anything in it is used. It moves
+# with STACKROX_VERSION, and so does deps/.
+ARG STACKROX_SHA256=e0ec28133210c71b51aa3c8703b50c28b0bd427745d66851eff6f7c32ca61942
+
 WORKDIR /src
 # The builder ships git and curl but no tar.
 RUN dnf install -y tar gzip && dnf clean all
 RUN set -eux; \
     curl -sSfL -o /tmp/stackrox.tgz \
         "https://github.com/stackrox/stackrox/archive/refs/tags/${STACKROX_VERSION}.tar.gz"; \
+    echo "${STACKROX_SHA256}  /tmp/stackrox.tgz" | sha256sum -c -; \
     tar -xzf /tmp/stackrox.tgz --strip-components=1; \
     rm -f /tmp/stackrox.tgz; \
     test "$(cat scanner/VULNERABILITY_VERSION)" = "${VULN_BUNDLE}"
+
+# Upstream 5.0.0's go.mod and go.sum with the modules grype flags moved to their
+# fixed releases (GO-2026-6612 critical; x/net, go-jose, compress, otel), resolved
+# once with `go get` and committed. The build resolves nothing: -mod=readonly
+# takes go.mod as written, and every download is checked against go.sum.
+COPY deps/go.mod deps/go.sum ./
 
 # The version variables upstream fills from status.sh (the //XDef markers in
 # scanner/internal/version and pkg/version/internal). No `release` tag: that is
@@ -39,13 +50,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -X github.com/stackrox/rox/scanner/internal/version.Version=${STACKROX_VERSION} \
       -X github.com/stackrox/rox/scanner/internal/version.VulnerabilityVersion=${VULN_BUNDLE} \
       -X github.com/stackrox/rox/pkg/version/internal.MainVersion=${STACKROX_VERSION}"; \
-    # Upstream 5.0.0 pins modules with published fixes (grype: GO-2026-6612
-    # critical, x/net, go-jose, compress, otel); take the fixed releases.
-    go get golang.org/x/net@v0.60.0 github.com/go-jose/go-jose/v4@v4.1.6 \
-      github.com/klauspost/compress@v1.20.2 go.opentelemetry.io/otel/trace@v1.47.0 \
-      go.opentelemetry.io/otel/sdk@v1.47.0; \
-    CGO_ENABLED=0 go build -mod=mod -trimpath -ldflags "$ldflags" -o /out/scanner ./scanner/cmd/scanner; \
-    CGO_ENABLED=0 go build -mod=mod -trimpath -ldflags "$ldflags" -o /out/scannerctl ./scanner/cmd/scannerctl; \
+    CGO_ENABLED=0 go build -mod=readonly -trimpath -ldflags "$ldflags" -o /out/scanner ./scanner/cmd/scanner; \
+    CGO_ENABLED=0 go build -mod=readonly -trimpath -ldflags "$ldflags" -o /out/scannerctl ./scanner/cmd/scannerctl; \
     /out/scanner -version
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
