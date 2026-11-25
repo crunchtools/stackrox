@@ -5,5 +5,5 @@ repo-kinds = ["container-image"]
 # Written by crunchtools/sdlc's scripts/convert_repo.py: moved from the workflows.
 image = "quay.io/crunchtools/stackrox"
 boot = "command"
-boot-command = "IMAGE=\"$IMAGE\" tests/boot.sh\n"
+boot-command = "IMAGE=\"$IMAGE\" tests/entrypoint.sh && IMAGE=\"$IMAGE\" tests/boot.sh\n"
 contract-test = "IMAGE=\"$IMAGE\" tests/contract.sh\n"

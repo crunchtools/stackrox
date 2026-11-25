@@ -23,7 +23,9 @@ are upstream StackRox's: each release ships that StackRox version.
   the JSON report.
 - Boot gate (scanner + Hummingbird `postgresql:18` in a pod with no network but
   its loopback, the password a podman secret, readiness 200) and a contract test
-  (version, bundle stream, cert identities).
+  (version, bundle stream, cert identities). `tests/entrypoint.sh`, run before
+  the boot gate, holds each password refusal (in the environment, unset,
+  missing, empty, unreadable) to a nonzero exit and an empty `$STACKROX_HOME`.
 - The build resolves no Go modules: `deps/go.mod` and `go.sum` are upstream
   5.0.0's with grype's flagged modules at their fixed releases, built with
   `-mod=readonly`, and the release tarball is checked against its sha256.
