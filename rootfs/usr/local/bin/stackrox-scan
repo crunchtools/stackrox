@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# stackrox-scan IMAGE [scannerctl scan flags] — scan one image with the
+# scanner running in this container (or pod), as the Central identity.
+#
+#   podman exec stackrox stackrox-scan registry.access.redhat.com/hi/go:latest
+#
+# Prints the scanner's JSON report. IMAGE may omit the scheme; https:// is
+# added because scannerctl requires it.
+set -euo pipefail
+
+img=${1:?usage: stackrox-scan IMAGE [scannerctl scan flags]}
+shift
+[[ "$img" == *://* ]] || img="https://$img"
+
+home=${STACKROX_HOME:-/var/lib/stackrox}
+addr=${STACKROX_ADDR:-localhost:8443}
+
+exec scannerctl \
+    --indexer-address "$addr" --matcher-address "$addr" \
+    --indexer-server-name scanner-v4.stackrox \
+    --matcher-server-name scanner-v4.stackrox \
+    --certs "$home/certs/client" \
+    scan "$@" "$img"

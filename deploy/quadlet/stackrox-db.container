@@ -1,0 +1,25 @@
+[Unit]
+Description=StackRox Scanner V4 database (Hummingbird PostgreSQL 18)
+
+[Container]
+Image=quay.io/hummingbird/postgresql:18
+ContainerName=stackrox-db
+Pod=stackrox.pod
+# The password is the podman secret stackrox-db-password, mounted as a file
+# (README: Deploy). Never an environment variable.
+Secret=stackrox-db-password,type=mount,target=/run/secrets/db-password
+Environment=POSTGRES_PASSWORD_FILE=/run/secrets/db-password
+# The vulnerability data lives here: it survives restarts and upgrades, so
+# only the first start pays the ~15 minute bundle import. U: owned by the
+# image's postgres user (999) inside the container.
+Volume=%h/srv/stackrox/data/postgres:/var/lib/postgresql/data:Z,U
+PodmanArgs=--memory=2g
+Tmpfs=/tmp:rw,nosuid,size=256m
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

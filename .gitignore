@@ -1,0 +1,4 @@
+# local scan output / scratch
+*.json.out
+/tmp/
+/data/
