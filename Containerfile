@@ -39,8 +39,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -X github.com/stackrox/rox/scanner/internal/version.Version=${STACKROX_VERSION} \
       -X github.com/stackrox/rox/scanner/internal/version.VulnerabilityVersion=${VULN_BUNDLE} \
       -X github.com/stackrox/rox/pkg/version/internal.MainVersion=${STACKROX_VERSION}"; \
-    CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o /out/scanner ./scanner/cmd/scanner; \
-    CGO_ENABLED=0 go build -trimpath -ldflags "$ldflags" -o /out/scannerctl ./scanner/cmd/scannerctl; \
+    # Upstream 5.0.0 pins modules with published fixes (grype: GO-2026-6612
+    # critical, x/net, go-jose, compress, otel); take the fixed releases.
+    go get golang.org/x/net@v0.60.0 github.com/go-jose/go-jose/v4@v4.1.6 \
+      github.com/klauspost/compress@v1.20.2 go.opentelemetry.io/otel/trace@v1.47.0 \
+      go.opentelemetry.io/otel/sdk@v1.47.0; \
+    CGO_ENABLED=0 go build -mod=mod -trimpath -ldflags "$ldflags" -o /out/scanner ./scanner/cmd/scanner; \
+    CGO_ENABLED=0 go build -mod=mod -trimpath -ldflags "$ldflags" -o /out/scannerctl ./scanner/cmd/scannerctl; \
     /out/scanner -version
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
